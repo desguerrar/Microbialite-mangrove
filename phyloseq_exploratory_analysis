@@ -1,0 +1,124 @@
+#Cargar asv_table, tax_table, metadata, phy_tree. Crear objeto phyloseq#
+tax_table_MM <- read.table("C:/Users/Daniel Esguerra/Documents/UNAM/Microbialito-manglar/taxonomy_1.txt", header = T, sep = "\t", row.names = 1, fill = T)
+asv_table_MM <- read.table("C:/Users/Daniel Esguerra/Documents/UNAM/Microbialito-manglar/asv-table.tsv", header = T, sep = "\t", row.names = 1)
+metadata_MM <- read.table("C:/Users/Daniel Esguerra/Documents/UNAM/Microbialito-manglar/micro-mang.txt", header = T, sep = "\t", row.names = 1)
+
+
+asv_table_MM <- as.matrix(asv_table_MM)
+tax_table_MM <- as.matrix(tax_table_MM)
+
+library(phyloseq)
+MM_physeq <- phyloseq(otu_table(asv_table_MM, taxa_are_rows = T), tax_table(tax_table_MM))
+MM_physeq@sam_data <- sample_data(metadata_MM)
+
+library(ape)
+fasttreephylo <- read.tree("C:/Users/Daniel Esguerra/Documents/UNAM/Microbialito-manglar/tree.nwk")
+phylo_tree <- phy_tree(fasttreephylo)
+MM_physeq@phy_tree <- phylo_tree
+
+#Filtros
+MM_physeq <- prune_samples(sample_names(MM_physeq) != "Mock", MM_physeq)
+
+
+filtphyla2 <- c("Mitochondria", "Eukaryota")
+MM_physeq1 <- subset_taxa(MM_physeq, !Domain %in% filtphyla2)
+MM_physeq1 <- subset_taxa(MM_physeq1, !Phylum %in% filtphyla2)
+MM_physeq1 <- subset_taxa(MM_physeq1, !Class %in% filtphyla2)
+MM_physeq1 <- subset_taxa(MM_physeq1, !Order %in% filtphyla2)
+MM_physeq1 <- subset_taxa(MM_physeq1, !Family %in% filtphyla2)
+
+library(dplyr)
+MM_physeq2 <- MM_physeq1 %>% subset_taxa(Domain != "Unassigned")
+MM_physeq2 <- MM_physeq2 %>% subset_taxa(Phylum != "")
+
+#Distribucion de read counts
+library(ggplot2)
+sample_sum_df <- data.frame(sum = sample_sums(MM_physeq2))
+
+ggplot(sample_sum_df, aes(x = sum)) +
+  geom_histogram(color = "black", fill = "grey", binwidth = 2500) +
+  ggtitle("Distribution of Sample Sequencing Depth") +
+  xlab("Read Counts") +
+  theme(axis.title.y = element_blank())
+
+#Remove_selected_samples
+MM_physeq2 <- subset_samples(MM_physeq2, MM_physeq2@sam_data@row.names != "AzMang4")
+MM_physeq2 <- subset_samples(MM_physeq2, MM_physeq2@sam_data@row.names != "BSMang4")
+MM_physeq2 <- subset_samples(MM_physeq2, MM_physeq2@sam_data@row.names != "BSMM2")
+MM_physeq2 <- subset_samples(MM_physeq2, MM_physeq2@sam_data@row.names != "BVMang4")
+MM_physeq2 <- subset_samples(MM_physeq2, MM_physeq2@sam_data@row.names != "AzMang4")
+MM_physeq2 <- subset_samples(MM_physeq2, MM_physeq2@sam_data@row.names != "BVMic4")
+MM_physeq2 <- subset_samples(MM_physeq2, MM_physeq2@sam_data@row.names != "PHMang4")
+MM_physeq2 <- subset_samples(MM_physeq2, MM_physeq2@sam_data@row.names != "BSMic4")
+MM_physeq2 <- subset_samples(MM_physeq2, MM_physeq2@sam_data@row.names != "BSMang2")
+
+#bar_plot_top_15_phyla
+MM_physeq2_glomm <- tax_glom(MM_physeq2, "Phylum", NArm = FALSE)
+MMphyseq2_mrgd_phylumrelab <- transform_sample_counts(MM_physeq2_glomm, function(x) x / sum(x))
+phylaglomm_sum_mangs = tapply(taxa_sums(MMphyseq2_mrgd_phylumrelab), tax_table(MMphyseq2_mrgd_phylumrelab)[, "Phylum"], sum, na.rm=F)
+
+top15phylaglomm_mangs = names(sort(phylaglomm_sum_mangs, TRUE))[1:15]
+t15phylaglomm_mangs = prune_taxa((tax_table(MMphyseq2_mrgd_phylumrelab)[, "Phylum"] %in% top15phylaglomm_mangs), MMphyseq2_mrgd_phylumrelab)
+
+taxa_abundance_table_phylum <- psmelt(t15phylaglomm_mangs)
+StackedBarPlot_phylum <- taxa_abundance_table_phylum %>% 
+  ggplot(aes(x =Sample, y = Abundance, fill = Phylum)) +
+  geom_bar(stat = "identity", position = "fill") +
+  labs(x = "",
+       y = "Relative Abundance") +
+  scale_fill_manual(values = c("#999999", "#E69F00", "#56B4E9", "#009E73", "#F0E442", "#0072B2", "#D55E00", "cyan2", "#CC79A7", "darkorchid", "gold1", "forestgreen", "firebrick", "royalblue4", "darkorange1")) +
+  theme(
+    axis.text.x = element_text(size = 10, angle = 90, vjust = 0.5, hjust = 1),
+    axis.text.y = element_text(size = 12),
+    legend.text = element_text(size = 10),
+    strip.text = element_text(size = 12)
+  )
+StackedBarPlot_phylum
+
+#Barplot microViz pckg, grouped by matrix#
+barplots_phyla <- phyloseq::merge_samples(MM_physeq2, group = "Matrix") %>%
+  tax_fix(unknowns = c("uncultured")) %>%
+  comp_barplot(tax_level =  "Phylum", n_taxa = 20, sample_order = c("Mangrove", "Microbialite", "M-M", "Sediment"), merge_other = T, bar_width = 0.9, bar_outline_colour = NA) +
+  coord_flip() +
+  theme(legend.text = element_text(size = 12))
+
+barplots_orders <- phyloseq::merge_samples(MM_physeq2, group = "Matrix") %>%
+  tax_fix(unknowns = c("uncultured")) %>%
+  comp_barplot(tax_level =  "Order", n_taxa = 25, sample_order = c("Mangrove", "Microbialite", "M-M", "Sediment"), merge_other = T, bar_width = 0.9, bar_outline_colour = NA) +
+  coord_flip() +
+  theme(legend.text = element_text(size = 10))
+barplots_orders
+
+#PCoA con unifrac (weighted) por lugar
+library(vegan)
+MM2_wunifrac <- ordinate(MM_physeq2, method = "PCoA", distance = "wunifrac")
+evals <- MM2_wunifrac$values$Eigenvalues
+pord1 <- plot_ordination(MM_physeq2, MM2_wunifrac, color = "Matrix", shape = "Location") +
+  labs(col = "Matrix") +
+  coord_fixed(sqrt(evals[2] / evals[1])) +
+  geom_point(size=2)
+pord1
+
+MM_physeq2_log <- transform_sample_counts(MM_physeq2, function(x) log2(x+1))
+MM2_wunifrac <- ordinate(MM_physeq2_log, method = "PCoA", distance = "wunifrac")
+evals <- MM2_wunifrac$values$Eigenvalues
+pord2 <- plot_ordination(MM_physeq2_log, MM2_wunifrac, color = "Matrix", shape = "Location") +
+  labs(col = "Matrix") +
+  coord_fixed(sqrt(evals[2] / evals[1])) +
+  geom_point(size=2) +
+  stat_ellipse(level = 0.70)
+pord2
+
+#Diversidad alpha
+alphaDiv <- plot_richness(MM_physeq2_log, x = "Location", color = "Matrix", measures = "InvSimpson") +
+  geom_point(position=position_jitterdodge(jitter.width = 0, jitter.height = 0)) +
+  theme(axis.text=element_text(size=12), legend.text=element_text(size=12)) +
+  geom_boxplot(aes(fill = Matrix, ), alpha=.8, outlier.shape = NA)
+
+library(btools)
+alpha_pd <- estimate_pd(MM_physeq_log)
+data_pd_table <- cbind(sample_data(MM_physeq_log), alpha_pd)
+pdata_table_kruskall <- kruskal.test(PD ~ Matrix, data_pd_table)
+
+pd_plot <- ggplot(data_pd_table, aes(Location, PD))
+pd_plot + geom_boxplot(aes(fill=Matrix))
