@@ -41,16 +41,6 @@ ggplot(sample_sum_df, aes(x = sum)) +
   xlab("Read Counts") +
   theme(axis.title.y = element_blank())
 
-#Remove_selected_samples
-MM_physeq2 <- subset_samples(MM_physeq2, MM_physeq2@sam_data@row.names != "AzMang4")
-MM_physeq2 <- subset_samples(MM_physeq2, MM_physeq2@sam_data@row.names != "BSMang4")
-MM_physeq2 <- subset_samples(MM_physeq2, MM_physeq2@sam_data@row.names != "BSMM2")
-MM_physeq2 <- subset_samples(MM_physeq2, MM_physeq2@sam_data@row.names != "BVMang4")
-MM_physeq2 <- subset_samples(MM_physeq2, MM_physeq2@sam_data@row.names != "AzMang4")
-MM_physeq2 <- subset_samples(MM_physeq2, MM_physeq2@sam_data@row.names != "BVMic4")
-MM_physeq2 <- subset_samples(MM_physeq2, MM_physeq2@sam_data@row.names != "PHMang4")
-MM_physeq2 <- subset_samples(MM_physeq2, MM_physeq2@sam_data@row.names != "BSMic4")
-MM_physeq2 <- subset_samples(MM_physeq2, MM_physeq2@sam_data@row.names != "BSMang2")
 
 #bar_plot_top_15_phyla
 MM_physeq2_glomm <- tax_glom(MM_physeq2, "Phylum", NArm = FALSE)
