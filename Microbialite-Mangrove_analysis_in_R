@@ -1,0 +1,644 @@
+#Cargar asv_table, tax_table, metadata, phy_tree. Crear objeto phyloseq#
+tax_table_MM <- read.table("C:/.../taxonomy_1.txt", header = T, sep = "\t", row.names = 1, fill = T)
+asv_table_MM <- read.table("C:/.../asv-table.tsv", header = T, sep = "\t", row.names = 1)
+metadata_MM <- read.table("C:/.../micro-mang.txt", header = T, sep = "\t", row.names = 1)
+
+
+asv_table_MM <- as.matrix(asv_table_MM)
+tax_table_MM <- as.matrix(tax_table_MM)
+
+library(phyloseq)
+MM_physeq <- phyloseq(otu_table(asv_table_MM, taxa_are_rows = T), tax_table(tax_table_MM))
+MM_physeq@sam_data <- sample_data(metadata_MM)
+
+library(ape)
+fasttreephylo <- read.tree("C:/Users/Daniel Esguerra/Documents/UNAM/Microbialito-manglar/tree.nwk")
+phylo_tree <- phy_tree(fasttreephylo)
+MM_physeq@phy_tree <- phylo_tree
+
+#Filtros
+MM_physeq <- prune_samples(sample_names(MM_physeq) != "Mock", MM_physeq)
+
+
+filtphyla2 <- c("Mitochondria", "Eukaryota")
+MM_physeq1 <- subset_taxa(MM_physeq, !Domain %in% filtphyla2)
+MM_physeq1 <- subset_taxa(MM_physeq1, !Phylum %in% filtphyla2)
+MM_physeq1 <- subset_taxa(MM_physeq1, !Class %in% filtphyla2)
+MM_physeq1 <- subset_taxa(MM_physeq1, !Order %in% filtphyla2)
+MM_physeq1 <- subset_taxa(MM_physeq1, !Family %in% filtphyla2)
+
+library(dplyr)
+MM_physeq2 <- MM_physeq1 %>% subset_taxa(Domain != "Unassigned")
+MM_physeq2 <- MM_physeq2 %>% subset_taxa(Phylum != "")
+MM_physeq2 <- prune_taxa(taxa_sums(MM_physeq2) >= 2, MM_physeq2)
+MM_physeq2 <- filter_taxa(MM_physeq2, function(x) (sum(x > 0) / length(x)) >= 0.01, prune = T)
+
+#Distribucion de read counts
+library(ggplot2)
+sample_sum_df <- data.frame(sum = sample_sums(MM_physeq2))
+
+ggplot(sample_sum_df, aes(x = sum)) +
+  geom_histogram(color = "black", fill = "grey", binwidth = 2500) +
+  ggtitle("Distribution of Sample Sequencing Depth") +
+  xlab("Read Counts") +
+  theme(axis.title.y = element_blank())
+
+
+#Barplot microViz pckg, grouped by matrix#
+barplots_phyla <- phyloseq::merge_samples(MM_physeq2, group = "Matrix") %>%
+  tax_fix(unknowns = c("uncultured")) %>%
+  comp_barplot(tax_level =  "Phylum", n_taxa = 20, sample_order = c("Mangrove", "Microbialite", "M-M", "Sediment"), merge_other = T, bar_width = 0.9, bar_outline_colour = NA) +
+  coord_flip() +
+  theme(legend.text = element_text(size = 12))
+
+barplots_orders <- phyloseq::merge_samples(MM_physeq2, group = "Matrix") %>%
+  tax_fix(unknowns = c("uncultured")) %>%
+  comp_barplot(tax_level =  "Order", n_taxa = 25, sample_order = c("Mangrove", "Microbialite", "M-M", "Sediment"), merge_other = T, bar_width = 0.9, bar_outline_colour = NA) +
+  coord_flip() +
+  theme(legend.text = element_text(size = 10), legend.position = "bottom")
+barplots_orders
+
+#generate palettes by phylum
+proteobac_palette <- generate_palette("#66C2A5", "go_both_ways", n_colours = 9, view_palette = F)
+base_colors
+   Proteobacteria       Myxococcota             NB1-j       Chloroflexi Verrucomicrobiota 
+        "#66C2A5"         "#FC8D62"         "#8DA0CB"         "#E78AC3"         "#A6D854" 
+     Bacteroidota     Cyanobacteria   Planctomycetota 
+        "#FFD92F"         "#E5C494"         "#B3B3B3" 
+chloroflex_palette <- generate_palette("#E78AC3", "go_both_ways", n_colours = 2, view_palette = F)
+print(chloroflex_palette)
+plot_palette(chloroflex_palette)
+verruco_palette <- generate_palette("#A6D854", "go_both_ways", n_colours = 2, view_palette = F)
+bacteroid_palette <- generate_palette("#FFD92F", "go_both_ways", n_colours = 2, view_palette = F)
+
+color_vector_25orders <- c("#999999", "#552500", "#F0E441", "#EDF7DC", "#A6D854", "#FFF7D5", "#FFD92F",
+                           "#FAE7F3", "#E78AC3","#F9F3E9", "#EFDBBE", "#E5C494", "#897558", 
+                           "#F6DECC", "#EEBE99", "#E59E66","#DD7E32", "#D55E00", "#AA4B00", 
+                           "#7F2508", "#7F3900", "black", "#E0F2ED", "#A3DAC9", 
+                           "#66C2A5", "#3D7463")
+
+#Plot desde el data frame del objeto gráfico de microViz
+ggplot(comp_barplot_order1, aes(x = fct_relevel(Sample, "Sediment", "Microbialite", "M-M", "Mangrove"), y = Abundance, fill = fct_relevel(Order, "Other", "Gemmatales", "NB1-j", "Chthoniobacterales", "Methylacidiphilales", "Chitinophagales", "Cytophagales","Chloroflexales", "SBR1031", "Haliangiales", "Myxococcales", "Nannocystales", "Polyangiales", "Alphaproteobacteria Class", "Azospirillales", "Burkholderiales", "Caulobacterales", "Nitrosococcales", "Rhizobiales", "Rhodobacterales", "Sphingomonadales", "Tistrellales", "Cyanobacteriales", "Eurycoccales", "Oxyphotobacteria_Incertae_Sedis", "Phormidesmiales"))) +
+geom_bar(stat = "identity", width = 0.9) +
+scale_fill_manual(values = color_vector_25orders) +
+coord_flip() +
+theme_minimal() +
+theme(
+        legend.text = element_text(size = 10),
+        axis.text.x = element_text(size = 10),
+        axis.text.y = element_text(size = 10),
+        legend.position = "bottom"
+   ) +
+labs(x = "Sample Type", y = "Relative Abundance", fill = "Order")
+
+#Unifrac (weighted) por lugar
+library(vegan)
+MM2_wunifrac <- ordinate(MM_physeq2, method = "PCoA", distance = "wunifrac")
+evals <- MM2_wunifrac$values$Eigenvalues
+pord1 <- plot_ordination(MM_physeq2, MM2_wunifrac, color = "Matrix", shape = "Location") +
+  labs(col = "Matrix") +
+  coord_fixed(sqrt(evals[2] / evals[1])) +
+  geom_point(size=2)
+pord1
+
+MM_physeq2_log <- transform_sample_counts(MM_physeq2, function(x) log2(x+1))
+MM2_wunifrac <- ordinate(MM_physeq2_log, method = "PCoA", distance = "wunifrac")
+evals <- MM2_wunifrac$values$Eigenvalues
+pord2 <- plot_ordination(MM_physeq2_log, MM2_wunifrac, color = "Matrix", shape = "Location") +
+  labs(col = "Matrix") +
+  coord_fixed(sqrt(evals[2] / evals[1])) +
+  geom_point(size=2) +
+  stat_ellipse(level = 0.70)
+pord2
+
+###NMDS ###
+MM_physeq2_log <- transform_sample_counts(MM_physeq2, function(x) log2(x+1))
+MM2_wunifrac <- ordinate(MM_physeq2_log, method = "NMDS", distance = "wunifrac")
+MM2_wunifrac$stress
+
+# Extract the NMDS scores
+nmds_scores <- scores(MM2_wunifrac)
+
+# Plot the NMDS using plot_ordination
+plot_ordination(MM_physeq2_log, MM2_wunifrac, color = "Matrix", shape = "Location") +
+  geom_point(size = 3) +  # Adjust point size
+  stat_ellipse(aes(group = Matrix), level = 0.70, linetype = 2, size = 0.5) +  # Add 70% confidence ellipses
+  theme_minimal() +
+  labs(title = "Stress = 0.1725",
+       x = "NMDS1",
+       y = "NMDS2",
+       color = "Matrix",
+       shape = "Location") +
+  scale_color_manual(values = c("Microbialite" = "cyan2", "Mangrove" = "chartreuse4", "M-M" = "red", "Sediment" = "purple"))
+
+#PERMANOVA
+perm1<-how(within = Within(type = "free"),
+           plots = Plots(type = "none"),
+           nperm = 999,
+           observed = TRUE)
+
+meta_log <- sample_data(MM_physeq2_log)
+adonis2(formula = bray_not_na ~ Matrix + Location, data = data.frame(meta_log), permutations = perm1)
+
+#PERMANOVA pareado (POST-HOC ANALYSIS)
+
+pairwise_permanova_manual <- function(dist_matrix, metadata, factor_col, permutations = 999) {
+  # Ensure the factor_col is a valid column in metadata
+  if (!factor_col %in% names(metadata)) {
+    stop("The specified factor column does not exist in the metadata.")
+  }
+  
+  # Convert the distance matrix to a matrix for easy subsetting
+  dist_matrix <- as.matrix(MM2_wunifrac)
+  
+  # Extract the unique levels of the factor
+  unique_groups <- unique(metadata[[factor_col]])
+  
+  # Initialize a list to store results
+  results <- list()
+  
+  # Iterate over each pair of groups
+  for (i in 1:(length(unique_groups) - 1)) {
+    for (j in (i + 1):length(unique_groups)) {
+      group1 <- unique_groups[i]
+      group2 <- unique_groups[j]
+      
+      # Subset indices for the current pair of groups
+      subset_indices <- metadata[[factor_col]] %in% c(group1, group2)
+      subset_dist <- dist_matrix[subset_indices, subset_indices]
+      subset_metadata <- metadata[subset_indices, ]
+      
+      # Check the subset
+      print(paste("Comparing", group1, "vs", group2))
+      print(table(subset_metadata[[factor_col]]))
+      
+      # Run PERMANOVA on the subset
+      result <- tryCatch({
+        adonis2(as.dist(subset_dist) ~ subset_metadata[[factor_col]], permutations = permutations)
+      }, error = function(e) {
+        list(error = TRUE, message = e)
+      })
+      
+      # Store the result
+      results[[paste(group1, "vs", group2)]] <- result
+    }
+  }
+  
+  return(results)
+}
+
+manual_pairwise_results <- pairwise_permanova_manual(unifrac_matrix, valid_data, "Location", permutations = perm1)
+manual_pairwise_results2 <- pairwise_permanova_manual(unifrac_matrix, valid_data, "Matrix", permutations = perm1)
+
+#Diversidad alpha
+alphaDiv <- plot_richness(MM_physeq2_log, x = "Location", color = "Matrix", measures = "InvSimpson") +
+  geom_point(position=position_jitterdodge(jitter.width = 0, jitter.height = 0)) +
+  theme(axis.text=element_text(size=12), legend.text=element_text(size=12)) +
+  geom_boxplot(aes(fill = Matrix, ), alpha=.8, outlier.shape = NA)
+
+library(btools)
+alpha_pd <- estimate_pd(MM_physeq_log)
+data_pd_table <- cbind(sample_data(MM_physeq_log), alpha_pd)
+pdata_table_kruskall <- kruskal.test(PD ~ Matrix, data_pd_table)
+
+pd_plot <- ggplot(data_pd_table, aes(Location, PD))
+pd_plot + geom_boxplot(aes(fill=Matrix))
+
+pdata_table_anova <- kruskal.test(value ~ Matrix, alphaDiv$data)
+pdata_table_anova
+
+dunn.test(alphaDiv$data$value, alphaDiv$data$Matrix, method = "bh", label = T, wrap = T, table = T, alpha = 0.05)
+
+data_pd_table <- cbind(sample_data(MM_physeq_log), alpha_pd)
+pdata_table_kruskall <- kruskal.test(PD ~ Matrix, data_pd_table)
+
+#Differential abundance
+library(DESeq2)
+MM_physeq3 <- prune_samples(sample_sums(MM_physeq2) > 500, MM_physeq2)
+MM_physeq3
+
+MM_physeq3 = subset_samples(MM_physeq3, Matrix != "Sediment")
+MM_physeq3 = subset_samples(MM_physeq3, Matrix != "M-M")
+diagdds = phyloseq_to_deseq2(MM_physeq3, ~ Matrix)
+
+gm_mean = function(x, na.rm=TRUE){
+  exp(sum(log(x[x > 0]), na.rm=na.rm) / length(x))
+}
+geoMeans = apply(counts(diagdds), 1, gm_mean)
+diagdds1 = estimateSizeFactors(diagdds, geoMeans = geoMeans)
+diagdds1 = DESeq(diagdds1, fitType="local")
+resultsNames(diagdds1)
+
+res <- results(diagdds1, name="Matrix_Microbialite_vs_Mangrove")
+resLFC <- lfcShrink(diagdds1, coef="Matrix_Microbialite_vs_Mangrove", type="apeglm")
+resLFC
+
+res = resLFC[order(resLFC$padj, na.last=NA), ]
+alpha = 0.01
+sigtab = res[(res$padj < alpha), ]
+sigtab = cbind(as(sigtab, "data.frame"), as(tax_table(MM_physeq3)[rownames(sigtab), ], "matrix"))
+head(sigtab)
+summary(res)
+mcols(res)$description
+
+posigtab <- filter(sigtab, sigtab$log2FoldChange > 0.9 | sigtab$log2FoldChange < -0.9)
+posigtab = posigtab[, c("baseMean", "log2FoldChange", "lfcSE", "padj", "Phylum", "Class", "Order", "Family", "Genus")]
+tail(posigtab)
+
+#Ampvis2 analysis
+library(ampvis2)
+colnames(tax_table(MM_physeq2)) <- c("Kingdom", "Phylum", "Class", "Order", "Family",  "Genus", "Species")
+MM2_av2 <- phyloseq_to_ampvis2(MM_physeq2)
+
+amp_venn(MM2_av2, group_by = "Matrix")
+amp_venn(MM2_av2, group_by = "Matrix", cut_f = 50)
+
+#Redes de interacciones en cada matrix despues de filtrar y aglomerar por familia
+se.mb.mang <- spiec.easi(MM_physeq_mang1, method = 'mb', lambda.min.ratio = 1e-2, nlambda = 20)
+adj_matrix <- as.matrix(getRefit(se.mb.mang))
+stability_matrix <- as.matrix(symBeta(getOptBeta(se.mb.mang), mode = "maxabs"))
+weighted_adj_matrix <- adj_matrix * abs(stability_matrix)
+
+network_mb_family_mang <- adj2igraph(weighted_adj_matrix, vertex.attr = list(name = taxa_names(MM_physeq_mang1)))
+tax_table_family <- tax_table(MM_physeq_mang1)
+family_names <- as.character(tax_table_family[, "Family"])
+uncultured_idx <- grep("uncultured", family_names)
+family_names[uncultured_idx] <- sapply(uncultured_idx, function(i) {
+  paste(tax_table_family[i, "Class"], "uncultured")
+})
+names(family_names) <- rownames(tax_table_family)
+V(network_mb_family_mang)$name <- family_names[V(network_mb_family_mang)$name]
+phylum_names <- as.character(tax_table_family[, "Phylum"])
+V(network_mb_family_mang)$phylum <- phylum_names
+network_mb_family_tidy <- as_tbl_graph(network_mb_family_mang)
+
+alpha_cent <- alpha_centrality(network_mb_family_mang)
+alpha_cent_df <- data.frame(name = V(network_mb_family_mang)$name, alpha_cent = alpha_cent)
+top_50_names <- alpha_cent_df %>%
+  arrange(desc(alpha_cent)) %>%
+  slice_head(n = 65) %>%
+  pull(name)
+
+network_mb_family_tidy <- network_mb_family_tidy %>%
+  activate(nodes) %>%
+  mutate(alpha_cent = alpha_cent,
+         degree = centrality_degree(),
+         phylum = phylum_names,  # Map phylum names from the vector
+         label = ifelse(name %in% top_50_names, name, NA))  # Label only top 50 by name
+
+ggraph(network_mb_family_tidy, layout = "fr") +
+  geom_edge_link(aes(edge_width = weight), edge_alpha = 0.5, show.legend = TRUE) +
+  geom_node_point(aes(size = degree, color = phylum), show.legend = TRUE) +  # Color nodes by phylum
+  geom_node_text(aes(label = label), repel = TRUE, size = 2.5, color = "brown", max.overlaps = 100) +
+  scale_edge_width(range = c(0.5, 2)) +
+  scale_size(range = c(2, 10)) +  # Adjust node size by degree
+  theme_void() +
+  labs(title = "Microbial Network Mangroves (modularity = 0.57)",
+       edge_width = "Edge Stability",
+       size = "Degree",
+       color = "Phylum")
+
+net.abs <- network_mb_family_tidy
+E(net.abs)$weight <- abs(E(net.abs)$weight)
+net.alpha <- alpha_centrality(net.abs, nodes = V(net.abs))
+net.strength <- strength(net.abs)
+bet <- betweenness(net.abs, v = V(net.abs), normalized = T)
+
+summary_cent <- as.data.frame(net.alpha, row.names = family_names)
+summary_cent$Weighted_vertex_degree <- net.strength
+summary_cent$Betweenness_centrality <- bet
+head(summary_cent)
+colnames(summary_cent)[1] <- "Alpha_centrality"
+summary_cent1 <- summary_cent %>%
+  arrange(desc(Alpha_centrality))
+
+#Modularidad
+ml <- cluster_louvain(net.abs)
+modularity(net.abs, membership(ml))
+#connectance 
+Con_sed <- edge_density(ig_sed)
+# Repeat for other networks
+
+#Assembly manglares y microbialitos 
+
+library(iCAMP)
+library(ape)
+library(picante)
+library(phyloseq)
+
+#-------- PREPARAMOS LOS ARCHIVOS PARA ICAMP -----------------------------------------------
+comm<-data.frame(t(read.csv("/home/.../M-M_asv-table_2.csv", row.names = "X")),
+                 check.names = FALSE)
+comm <- comm[which(rowSums(comm) > 0),]
+print("com listo")
+
+
+tree<-read.tree(file = "/home/lebac_user1/MM/Exported_data_2_phyloseq/tree.nwk")
+tree <- prune.sample(comm, tree)
+print("tree listo")
+
+
+clas<-read.csv("/home/.../M-M_taxonomy_2.csv", row.names = "X")
+print("class listo")
+
+meta<-read.csv("/home/.../M-M_micro-mang_2.csv",row.names="SampleID") # skip this if you do not have env.file
+meta.group<-meta[,2,drop=FALSE]
+
+print("Datos importados correctamente [AVOID MISSMATCHES IN THE NAMES")
+
+
+#-------- PREPARE THE RUTES AND NAMES FOR THE FILES -----------------------
+
+wd0=getwd() # please change to the folder you want to save the pd.big output.
+
+save.wd=paste0(wd0,"/pdbig.icampcmbMPD")
+prefix="Gradiente_"
+
+
+print(wd0)
+print("Establecer rutas listo ")
+
+
+#---------- MATCH THE OTUS/METADATA/PHYLOGENETIC TREE-----------------------4
+# match sample IDs in OTU table and treatment information table
+sampid.check=match.name(rn.list=list(comm=comm,treat=meta))
+# for your data files, if you have not matched the IDs before, the unmatched OTUs will be removed.
+treat=sampid.check$treat
+comm=sampid.check$comm
+comm=comm[,colSums(comm)>0,drop=FALSE] # if some unmatched samples were removed, some OTUs may become ghosts, then you may use this line to remove them if necessary.
+
+# match OTU IDs in OTU table and tree file
+spid.check=match.name(cn.list=list(comm=comm),rn.list=list(clas=clas),tree.list=list(tree=tree))
+# for your data files, if you have not matched the IDs before, the unmatched OTUs will be removed.
+comm=spid.check$comm
+clas=spid.check$clas
+tree=spid.check$tree
+
+
+print("OTUS/METADATA/PHYLOGENETIC TREE CONCUERDAN")
+
+
+#-------- IMPORTANT!!!!!.---CALCULATE THE pairwise phylogenetic matrix---------------------------
+
+
+#since microbial community data usually has a large number of species (OTUs or ASVs), 
+#we use "big.matrix" in R package "bigmemory" to handle the large phylogenetic distance matrix. 
+
+
+
+if(!file.exists("pd.desc")) 
+{
+  pd.big=iCAMP::pdist.big(tree = tree, wd=save.wd)
+  # output files:
+  # path.rda: a R object to list all the nodes and  edge lengthes from root to every tip. saved in R data format. an intermediate output when claculating phylogenetic distance matrix.
+  # pd.bin: BIN file (backingfile) generated by function big.matrix in R package bigmemory. This is the big matrix storing pairwise phylogenetic distance values. By using this bigmemory format file, we will not need memory but hard disk when calling big matrix for calculation.
+  # pd.desc: the DESC file (descriptorfile) to hold the backingfile (pd.bin) description.
+  # pd.taxon.name.csv: comma delimited csv file storing the IDs of tree tips (OTUs), serving as the row/column names of the big phylogenetic distance matrix.
+}else{
+  # if you already calculated the phylogenetic distance matrix in a previous run
+  pd.big=list()
+  pd.big$tip.label=read.csv(paste0(save.wd,"/pd.taxon.name.csv"),row.names = 1,stringsAsFactors = FALSE)[,1]
+  pd.big$pd.wd=save.wd
+  pd.big$pd.file="pd.desc"
+  pd.big$pd.name.file="pd.taxon.name.csv"
+}
+
+print("Matrix guardada")
+
+#NOTE: Check if the files from the last lines are saves in you carpet!!!####
+
+#-------- PREPARE THE ICAMP PARAMETRES -------------------------------
+
+#For the algoritm 
+detail.null=TRUE
+bin.size.limit = 5 
+sig.index="SES.RC" # this is traditional way, with assumption that null values of phylogenetic metrics follow normal distribution. 
+rand.time=100
+
+
+#For the files 
+prefix3=paste0(prefix,".MetaGrp")
+sig.index="Confidence"
+
+print(" ICAMP PREPARED AND READY TO RUN ")
+
+#-------- RUN ICAMP (FOR METACOMMUNITIES )-------------
+
+print("ICAMP Start... good luck")
+
+icres.meta2=iCAMP::icamp.cm(comm=comm,
+                            tree=tree,
+                            meta.group=meta.group,
+                            pd.desc=pd.big$pd.file,
+                            pd.spname=pd.big$tip.label,
+                            pd.wd=pd.big$pd.wd,
+                            rand=rand.time,
+                            prefix=prefix3,
+                            ds=0.2,
+                            pd.cut=NA,
+                            phylo.rand.scale="within.bin",
+                            taxa.rand.scale="across.all",
+                            phylo.metric="bMPD",
+                            sig.index=sig.index,
+                            bin.size.limit=bin.size.limit,
+                            rtree.save=FALSE,
+                            detail.save=TRUE,
+                            
+                            qp.save=TRUE,
+                            
+                            detail.null=FALSE,
+                            ignore.zero=TRUE,
+                            output.wd=save.wd,
+                            correct.special=TRUE,
+                            unit.sum=rowSums(comm),
+                            special.method="depend",
+                            ses.cut = 1.96,
+                            rc.cut = 0.95,
+                            conf.cut=0.975,
+                            omit.option="no")
+
+print("ICAMP RUN COMPLETED :) ")
+save.image("./RESULTADO_ICAMP.Rdata")
+print("ICAMP ESPACIO GUARDADO")
+
+#-------- BIN LEVEL STATISTICS (RESULTS)---------------------------------
+print("Run stats and export results")
+
+
+icbin=iCAMP::icamp.bins(icamp.detail = icres.meta2$detail,
+                        treat = treat,
+                        clas=clas,
+                        silent=FALSE, 
+                        boot = TRUE,
+                        rand.time = rand.time,
+                        between.group = TRUE
+)
+
+save(icbin,file = paste0(prefix,".iCAMP.Summary.rda")) # just to archive the result. rda file is automatically compressed, and easy to load into R.
+
+write.csv(icbin$Pt,file = paste0(prefix,".ProcessImportance_EachGroup.csv"),row.names = FALSE)
+
+write.csv(icbin$Ptk,file = paste0(prefix,".ProcessImportance_EachBin_EachGroup.csv"),row.names = FALSE)
+
+write.csv(icbin$Ptuv,file = paste0(prefix,".ProcessImportance_EachTurnover.csv"),row.names = FALSE)
+
+write.csv(icbin$BPtk,file = paste0(prefix,".BinContributeToProcess_EachGroup.csv"),row.names = FALSE)
+
+write.csv(data.frame(ID=rownames(icbin$Class.Bin),icbin$Class.Bin,stringsAsFactors = FALSE),
+          file = paste0(prefix,".Taxon_Bin.csv"),row.names = FALSE)
+
+write.csv(icbin$Bin.TopClass,file = paste0(prefix,".Bin_TopTaxon.csv"),row.names = FALSE)
+
+df<-read.csv("./Gradiente_.ProcessImportance_EachGroup.csv")
+str(df)
+
+colnames(df)<-c("Method","GroupBasedOn","Group",
+                "Seleccion heterogenea (HeS)",
+                "Selección homogenea (HoS)",         
+                "Limitación de dispersión (DL)",
+                "Dispersion homogenea (HD)",
+                "Drift (DR)")
+
+df_matrix<-df[c(16:19),c(3:8)]
+df_sitio<-df[c(1:5),c(3:8)]
+
+
+df_matrix_l<-pivot_longer(data = df_matrix,
+                          !Group,
+                          names_to = "Process",
+                          values_to = "Percentage")
+
+df_sitio_l<-pivot_longer(data = df_sitio,
+                         !Group,
+                         names_to = "Process",
+                         values_to = "Percentage")
+
+#Para graficar 
+unique(df_sitio$Group)
+Sitio_order<-c("Azucareros","BC(Bacalar Centro)","BS(Hotel Abandonado)","BuenaVista","Panto-Ha")
+df_sitio_l$Group<-as.factor(df_sitio_l$Group)
+
+unique(df_matrix$Group)
+Matrix_order<-c("Sediment","Mangrove","M-M","Microbialite")
+df_matrix_l$Group<-as.factor(df_matrix_l$Group)
+
+
+
+#Colores agrupados por Stocasticos y Deterministicos 
+
+
+a<-ggplot(data=df_matrix_l,aes(x=factor(Group,levels = Matrix_order),
+                               y=Percentage,
+                               fill=Process))+
+  geom_bar(aes(fill=Process),stat = "identity")+
+  geom_text(data=df_matrix_l[df_matrix_l$Percentage > 0.01,],
+            aes(label=paste0(round(Percentage*100,digits = 1),"%")),
+            position = position_stack(vjust = 0.5),
+            size = 3)+
+  theme_minimal()+
+  xlab("Sustratos")+
+  labs(title = "Procesos de ensamble por sustratos")+
+  theme(plot.title=element_text(hjust = 0.5))+
+  scale_fill_manual(values = c("#7bc043","#0392cf","#fdf498","#ee4035","#703529"))
+a
+
+plot_icamp<-ggarrange(b, ncol=1, nrow=1, common.legend = TRUE, legend="right")
+
+bin_info <- read.csv("~/.../Gradiente_.Taxon_Bin.csv")
+bin_processes <- read.csv("~/.../Gradiente_.BinContributeToProcess_EachGroup_2.csv")
+bin_weight <- read.csv("~/.../Gradiente_.ProcessImportance_EachBin_EachGroup_2.csv")
+
+tax_table_MM <- read.table("C:/.../taxonomy_1.txt", header = T, sep = "\t", row.names = 1, fill = T)
+
+bin_info_core <- bin_info %>%
+  select(ID, Bin)
+
+bin_taxonomy <- tax_table_MM %>%
+  rownames_to_column(var = "OTU_ID") %>%
+  merge(bin_info_core, ., by.x = "ID", by.y = "OTU_ID")
+
+# Pivot the data to a complete long format
+# moving the bin columns (bin1, bin2, ...) into rows.
+bin_weight_long <- bin_weight %>%
+  pivot_longer(
+    cols = -c(Group, Index),  # Keep Group and Index fixed. Pivot all other columns.
+    names_to = "BinID",       # The column names (bin1, bin2...) become values in a new 'BinID' column.
+    values_to = "Value"       # The numbers in those columns become values in a new 'Value' column.
+  )
+
+# Pivot the Index values to become column names
+bin_weight_clean <- bin_weight_long %>%
+  pivot_wider(
+    names_from = Index,  # The values in the 'Index' column (HeS, HoS...) become new column names.
+    values_from = Value  # The 'Value' column provides the data for these new columns.
+  )
+# Group, BinID is unique for each Index.
+
+bin_weight_clean2 <- filter(bin_weight_clean, BinID != c("Method", "GroupBasedOn"))
+
+target_data <- bin_weight_clean2 %>%
+  filter(Group == "Mangrove") %>%  # Change this to your group of interest
+  select(BinID, Group, DominantProcess, DominantProcessImportance, DominantProcessPvalue)
+
+names(bin_taxonomy)[names(bin_taxonomy) == 'Bin'] <- 'BinID'
+
+bin_taxonomy_fixed <- bin_taxonomy %>%
+     mutate(BinID = tolower(BinID))
+
+final_data <- bin_taxonomy_fixed %>%
+  left_join(target_data, by = "BinID")
+
+final_data_filt <- filter(final_data, DominantProcessImportance > 0.5999 & DominantProcessPvalue < 0.05)
+final_data_filt <- filter(final_data_filt, DominantProcessImportance != "NaN")
+
+results_by_phylum <- final_data_filt %>%
+  group_by(Phylum, DominantProcess) %>%
+  summarise(
+    Number_of_OTUs = n(),
+    Number_of_Bins = n_distinct(BinID),
+    .groups = 'drop'
+  ) %>%
+  arrange(DominantProcess, desc(Number_of_OTUs))
+
+results_by_order <- final_data_filt %>%
+   group_by(Order, DominantProcess) %>%
+   summarise(
+       Number_of_OTUs = n(),
+       Number_of_Bins = n_distinct(BinID),
+       .groups = 'drop'
+  ) %>%
+  arrange(DominantProcess, desc(Number_of_OTUs))
+
+order_assembly_summary <- final_data_filt %>%
+  group_by(Order, DominantProcess) %>%
+  summarise(
+    ASV_Count = n(),
+    Bin_Count = n_distinct(BinID),
+    .groups = 'drop'
+  ) %>%
+  group_by(Order) %>%
+  mutate(Total_ASVs = sum(ASV_Count),
+         Process_Proportion = ASV_Count / Total_ASVs) %>%
+  filter(Total_ASVs >= 10) %>% # Focus on reasonably abundant orders
+  arrange(DominantProcess, desc(Process_Proportion))
+
+da_mang_results <- read.delim("C:/Users/Daniel Esguerra/Documents/UNAM/Microbialito-manglar/S2T_abdif_table_Mang_vs_MM.tsv", header = T, sep = "\t", fill = T)
+
+da_assembly_comparison <- da_mang_results %>%
+  left_join(order_assembly_summary, by = "Order") %>%
+  filter(!is.na(DominantProcess))
+
+functional_insights <- final_data_filt %>%
+  group_by(Order, DominantProcess) %>%
+  summarise(
+    Total_ASVs = n(),
+    .groups = 'drop'
+  ) %>%
+    filter(DominantProcess %in% c("HoS", "DL", "DR")) %>% # Homogeneous selection, dispersal limitation, drift
+  pivot_wider(names_from = DominantProcess, values_from = Total_ASVs, values_fill = 0) %>%
+  mutate(
+    Selection_Ratio = HoS / (HoS + DL + DR),
+    Stochastic_Ratio = (DL + DR) / (HoS + DL + DR)
+  ) %>%
+  arrange(desc(Selection_Ratio))
+
